@@ -101,13 +101,17 @@ impl ScimProjection for RecordingProjection {
         input: ScimProjectedUserState,
         context: ScimTransactionContext,
     ) -> Result<(), ScimError> {
-        if self
+        #[allow(
+            deprecated,
+            reason = "fetch_update supports the Rust 1.90 MSRV; try_update requires Rust 1.95"
+        )]
+        let should_fail = self
             .failures
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                 remaining.checked_sub(1)
             })
-            .is_ok()
-        {
+            .is_ok();
+        if should_fail {
             return Err(ScimError::new(500, "injected projection failure"));
         }
         assert_eq!(
