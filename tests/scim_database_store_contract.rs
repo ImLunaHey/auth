@@ -101,16 +101,21 @@ impl ScimProjection for RecordingProjection {
         input: ScimProjectedUserState,
         context: ScimTransactionContext,
     ) -> Result<(), ScimError> {
-        #[allow(
-            deprecated,
-            reason = "fetch_update supports the Rust 1.90 MSRV; try_update requires Rust 1.95"
-        )]
-        let should_fail = self
-            .failures
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
-                remaining.checked_sub(1)
-            })
-            .is_ok();
+        let mut remaining = self.failures.load(Ordering::SeqCst);
+        let should_fail = loop {
+            let Some(next) = remaining.checked_sub(1) else {
+                break false;
+            };
+            match self.failures.compare_exchange_weak(
+                remaining,
+                next,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break true,
+                Err(current) => remaining = current,
+            }
+        };
         if should_fail {
             return Err(ScimError::new(500, "injected projection failure"));
         }
